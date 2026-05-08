@@ -1,0 +1,8 @@
+.env
+.venv/
+.temp/
+logs/
+music/
+downloads/
+__pycache__/
+*.pyc
