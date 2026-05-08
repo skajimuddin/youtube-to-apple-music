@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import sys
@@ -51,6 +52,25 @@ COMMON_TITLE_NOISE = (
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
+class TerminalColor:
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    CYAN = "\033[36m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    RED = "\033[31m"
+
+
+def use_color() -> bool:
+    return sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
+
+
+def paint(message: str, color: str) -> str:
+    if not use_color():
+        return message
+    return f"{color}{message}{TerminalColor.RESET}"
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
@@ -81,6 +101,11 @@ def log(message: str) -> None:
     write_line(RUN_LOG_FILE, message)
 
 
+def status(message: str, color: str) -> None:
+    print(paint(message, color))
+    write_line(RUN_LOG_FILE, message)
+
+
 def log_error(link: str, message: str, exc: BaseException | None = None) -> None:
     details = message
     if exc is not None:
@@ -89,6 +114,7 @@ def log_error(link: str, message: str, exc: BaseException | None = None) -> None
     if exc is not None:
         write_line(ERROR_LOG_FILE, traceback.format_exc().rstrip())
     write_line(RUN_LOG_FILE, f"ERROR | {link} | {details}")
+    print(paint(f"ERROR | {link} | {details}", TerminalColor.RED))
 
 
 def load_links() -> list[str]:
@@ -476,19 +502,19 @@ def process_link(link: str, archived_ids: set[str], library_index: dict[str, dic
 
         source_id = str(info.get("id") or "")
         if source_id and source_id in archived_ids:
-            log(f"SKIP archive hit: {link}")
+            status(f"SKIP archive hit: {link}", TerminalColor.YELLOW)
             return
 
         metadata, itunes_result = enrich_metadata(info)
         media_key = canonical_key(metadata["artist"], metadata["title"])
         if media_key and media_key in library_index:
-            log(f"SKIP duplicate library entry: {metadata['artist']} - {metadata['title']}")
+            status(f"SKIP duplicate library entry: {metadata['artist']} - {metadata['title']}", TerminalColor.YELLOW)
             if source_id and source_id not in archived_ids:
                 append_archive_id(source_id)
                 archived_ids.add(source_id)
             return
 
-        log(f"START {metadata['artist']} - {metadata['title']}")
+        status(f"START {metadata['artist']} - {metadata['title']}", TerminalColor.CYAN)
 
         with YoutubeDL(build_ydl_options(job_dir)) as downloader:
             downloader.download([link])
@@ -516,7 +542,7 @@ def process_link(link: str, archived_ids: set[str], library_index: dict[str, dic
             }
             save_library_index(library_index)
 
-        log(f"DONE  {final_path.name}")
+        status(f"DONE  {final_path.name}", TerminalColor.GREEN)
 
     except DownloadError as exc:
         log_error(link, "download failed", exc)
@@ -532,24 +558,24 @@ def main() -> int:
     ensure_workspace()
     links = load_links()
     if not links:
-        print("No valid links found in links.txt")
+        print(paint("No valid links found in links.txt", TerminalColor.YELLOW))
         return 1
 
     archived_ids = load_archived_ids()
     library_index = load_library_index()
 
-    print(f"\nFound {len(links)} unique links.\n")
+    print(paint(f"\nFound {len(links)} unique links.\n", TerminalColor.BOLD))
 
     for link in links:
-        print("=" * 60)
-        print(f"Processing: {link}")
-        print("=" * 60)
+        print(paint("=" * 60, TerminalColor.BOLD))
+        print(paint(f"Processing: {link}", TerminalColor.CYAN))
+        print(paint("=" * 60, TerminalColor.BOLD))
         try:
             process_link(link, archived_ids, library_index)
         except Exception:
-            print(f"\nFailed:\n{link}\n")
+            print(paint(f"\nFailed:\n{link}\n", TerminalColor.RED))
 
-    print("\nAll downloads completed.\n")
+    print(paint("\nAll downloads completed.\n", TerminalColor.GREEN))
     return 0
 
 
